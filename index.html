@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gọi tên học sinh ngẫu nhiên</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#1f2430;--muted:#6b7285;--accent:#3b5bdb;--accent-t:#fff;--border:#e1e4ee;--ok:#2f9e44;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161d;--card:#1e222c;--text:#eceff6;--muted:#9aa2b5;--accent:#6c8cff;--accent-t:#0f1220;--border:#2f3545;--ok:#5fd07a}}
+:root[data-theme="dark"]{--bg:#14161d;--card:#1e222c;--text:#eceff6;--muted:#9aa2b5;--accent:#6c8cff;--accent-t:#0f1220;--border:#2f3545;--ok:#5fd07a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+button{touch-action:manipulation}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+main{max-width:960px;margin:0 auto;padding:20px 16px 40px;display:grid;gap:16px;grid-template-columns:1.4fr 1fr}
+@media(max-width:760px){
+main{grid-template-columns:1fr;padding:12px 12px 32px;gap:12px}
+h1{font-size:1.25rem}
+.stage{min-height:260px;padding:14px;gap:14px}
+button.main{width:100%;padding:16px;font-size:1.3rem}
+button{min-height:44px}
+label.opt{min-height:44px}
+textarea{height:180px}
+}
+h1{grid-column:1/-1;margin:0;font-size:1.5rem}
+h1 small{display:block;font-size:.9rem;font-weight:400;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px}
+.stage{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:320px;gap:18px}
+.label{color:var(--muted);font-size:.9rem}
+#name{font-size:clamp(1.8rem,6vw,3.2rem);font-weight:700;min-height:1.3em;word-break:break-word}
+#name.done{color:var(--accent);animation:pop .5s ease}
+@keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+button{font:inherit;cursor:pointer;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);padding:9px 14px}
+button.main{background:var(--accent);color:var(--accent-t);border:0;font-size:1.2rem;font-weight:600;padding:14px 32px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
+label.opt{display:flex;gap:6px;align-items:center;font-size:.92rem;color:var(--muted)}
+textarea{width:100%;height:220px;resize:vertical;font:inherit;font-size:16px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text)}
+h2{font-size:1rem;margin:0 0 8px}
+ol{margin:0;padding-left:22px;max-height:200px;overflow:auto}
+li{padding:2px 0}
+.stat{color:var(--ok);font-weight:600}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50}
+</style>
+</head>
+<body>
+<canvas id="fx"></canvas>
+<main>
+  <h1>🎲 Gọi tên học sinh ngẫu nhiên<small>Kiểm tra bài đầu giờ</small></h1>
+
+  <section class="card stage">
+    <div class="label">Còn <span id="left" class="stat">0</span> / <span id="total">0</span> học sinh chưa được gọi</div>
+    <div id="name">Bấm nút để gọi tên</div>
+    <button id="go" class="main">Gọi tên</button>
+    <div class="row">
+      <label class="opt"><input type="checkbox" id="norepeat" checked> Không gọi lặp lại</label>
+      <label class="opt"><input type="checkbox" id="snd" checked> Bật âm thanh</label>
+      <button id="reset">Làm lại từ đầu</button>
+    </div>
+  </section>
+
+  <aside style="display:grid;gap:16px;align-content:start">
+    <section class="card">
+      <h2>Danh sách lớp (mỗi dòng một tên)</h2>
+      <textarea id="list" spellcheck="false"></textarea>
+    </section>
+    <section class="card">
+      <h2>Đã gọi (<span id="cnt">0</span>)</h2>
+      <ol id="history"></ol>
+    </section>
+  </aside>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const KEY = 'goiten-list';
+const sample = ['Nguyễn Văn An','Trần Thị Bình','Lê Hoàng Cường','Phạm Minh Dũng','Hoàng Thu Hà','Vũ Quốc Huy','Đặng Ngọc Lan','Bùi Gia Minh'].join('\n');
+const CKEY = 'goiten-called';
+let called = [], busy = false;
+try { const s = JSON.parse(localStorage.getItem(CKEY)); if (Array.isArray(s)) called = s; } catch(e) {}
+
+try { $('list').value = localStorage.getItem(KEY) || sample; } catch(e) { $('list').value = sample; }
+
+const names = () => [...new Set($('list').value.split('\n').map(s => s.normalize('NFC').trim()).filter(Boolean))];
+const pool = () => $('norepeat').checked ? names().filter(n => !called.includes(n)) : names();
+
+function refresh(){
+  called = called.filter(n => names().includes(n));
+  $('total').textContent = names().length;
+  $('left').textContent = names().filter(n => !called.includes(n)).length;
+  $('cnt').textContent = called.length;
+  $('history').innerHTML = '';
+  called.forEach(n => { const li = document.createElement('li'); li.textContent = n; $('history').appendChild(li); });
+  $('go').disabled = busy;
+  try { localStorage.setItem(CKEY, JSON.stringify(called)); } catch(e) {}
+}
+
+/* Âm thanh */
+let ac = null;
+function beep(f, d, t, v){
+  if (!$('snd').checked) return;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') ac.resume();
+    const o = ac.createOscillator(), g = ac.createGain(), n = ac.currentTime;
+    o.type = t || 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(v || 0.15, n);
+    g.gain.exponentialRampToValueAtTime(0.001, n + d);
+    o.connect(g); g.connect(ac.destination); o.start(n); o.stop(n + d);
+  } catch(e) {}
+}
+function fanfare(){
+  const tune = [[523,0,.15],[523,150,.15],[784,300,.15],[659,450,.15],[784,600,.15],[1047,750,.3],[784,1050,.15],[1047,1200,.15],[1319,1350,.15],[1047,1500,.15],[1319,1650,.15],[1568,1800,.7]];
+  tune.forEach(([f, t, d]) => setTimeout(() => { beep(f, d + 0.15, 'triangle', 0.2); beep(f * 2, d + 0.1, 'sine', 0.05); }, t));
+}
+function pop(){ beep(90 + Math.random() * 40, 0.2, 'sine', 0.25); beep(1000 + Math.random() * 1500, 0.2, 'sine', 0.07); }
+
+/* Pháo hoa */
+const cv = $('fx'), ctx = cv.getContext('2d');
+let parts = [], running = false, bursts = 0;
+function fit(){ cv.width = innerWidth; cv.height = innerHeight; }
+addEventListener('resize', fit); fit();
+function burst(x, y){
+  pop();
+  const hue = Math.random() * 360;
+  for (let i = 0; i < 70; i++) {
+    const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 5;
+    parts.push({x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, h: hue + Math.random() * 40});
+  }
+}
+function loop(){
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  parts.forEach(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.vx *= 0.99; p.life -= 0.013;
+    ctx.globalAlpha = Math.max(p.life, 0);
+    ctx.fillStyle = 'hsl(' + p.h + ',100%,60%)';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, 7); ctx.fill();
+  });
+  parts = parts.filter(p => p.life > 0);
+  if (parts.length || bursts > 0) requestAnimationFrame(loop); else { running = false; ctx.clearRect(0, 0, cv.width, cv.height); }
+}
+function fireworks(){
+  bursts = 7; fanfare();
+  const t = setInterval(() => {
+    burst(cv.width * (0.15 + Math.random() * 0.7), cv.height * (0.12 + Math.random() * 0.4));
+    if (--bursts <= 0) clearInterval(t);
+  }, 280);
+  if (!running) { running = true; loop(); }
+}
+
+$('list').addEventListener('input', () => {
+  try { localStorage.setItem(KEY, $('list').value); } catch(e) {}
+  refresh();
+});
+$('norepeat').addEventListener('change', refresh);
+
+$('go').addEventListener('click', () => {
+  const p = pool(), el = $('name');
+  if (!p.length) {
+    el.className = '';
+    el.textContent = names().length ? 'Đã gọi hết cả lớp! 🎉' : 'Hãy nhập danh sách lớp';
+    return;
+  }
+  beep(440, 0.03, 'sine', 0.02);
+  busy = true; refresh(); el.className = '';
+  const all = names();
+  const pick = p[Math.floor(Math.random() * p.length)];
+  let i = 0;
+  (function tick(){
+    if (i < 22) {
+      el.textContent = all[Math.floor(Math.random() * all.length)];
+      beep([523, 587, 659, 784, 880][i % 5], 0.09, 'triangle', 0.12);
+      i++; setTimeout(tick, 50 + i * 8);
+    } else {
+      el.textContent = pick; el.className = 'done';
+      if (!called.includes(pick)) called.push(pick);
+      busy = false; refresh();
+      fireworks();
+    }
+  })();
+});
+
+$('reset').addEventListener('click', () => {
+  called = []; $('name').className = ''; $('name').textContent = 'Bấm nút để gọi tên'; refresh();
+});
+
+refresh();
+</script>
+</body>
+</html>
